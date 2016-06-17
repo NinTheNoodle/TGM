@@ -1,19 +1,12 @@
-from tgm.sys import Node
+from tgm.game import World, Layer
+from tgm.sys import Entity
 
 
-class World(Node):
+class Ground(Entity):
     pass
 
 
-class Layer(Node):
-    pass
-
-
-class Ground(Node):
-    pass
-
-
-class Player(Node):
+class Player(Entity):
     def __init__(self):
         super().__init__()
         print("hi")
