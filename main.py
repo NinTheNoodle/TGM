@@ -13,7 +13,7 @@ class Ground(Entity):
 class Player(Entity):
     def __init__(self):
         super().__init__()
-        self._node_index[SuperUpdate].pop()()
+        list(self._node_index[SuperUpdate])[0]()
 
     @on(SuperUpdate)
     def super_update(self):
@@ -28,11 +28,13 @@ def main():
     world = World()
     for i in range(20):
         layer = world.attach(Layer())
-        for _ in range(4):
+        for _ in range(1):
             player = layer.attach(Player())
             for _ in range(2):
                 player.attach(Collider())
     print(node_tree_summary(world))
+    for layer in world.find(Layer):
+        print(layer.get_with(Collider))
 
 if __name__ == "__main__":
     main()

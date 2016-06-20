@@ -1,12 +1,13 @@
 from collections import defaultdict, Counter
 from inspect import getmro, getmembers
+from tgm.sys import Query
 
 
 class NodeMeta(type):
     pass
 
 
-class Node(object, metaclass=NodeMeta):
+class Node(metaclass=NodeMeta):
     """The base class for all objects in the scene graph."""
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)
@@ -37,13 +38,11 @@ class Node(object, metaclass=NodeMeta):
         if (self.parent() is not None) and (not self._node_index[key]):
             self.parent().remove_index_key(key, self)
 
-    def children(self, query):
-        """Get all the immediate children of this object that fulfil the query.
-        """
-        if query is Node:
-            return self._node_children.copy()
+    def matches(self, query):
+        if not isinstance(query, Query):
+            query = Query(query)
 
-        raise NotImplemented()
+        return query.matches(self)
 
     def parent(self, query=None):
         """Return the closest of the object's parents that satisfies the query.
@@ -53,7 +52,63 @@ class Node(object, metaclass=NodeMeta):
         if query is None or query is Node:
             return self._node_parent
 
-        raise NotImplemented()
+        if not isinstance(query, Query):
+            query = Query(query)
+
+        parent = self._node_parent
+        while parent is not None:
+            if query.matches(parent):
+                return parent
+            parent = parent._node_parent
+
+        raise ValueError("No parent found matching the given query")
+
+    def children(self, query):
+        """Get all the immediate children of this object that fulfil the query.
+        """
+        if query is Node:
+            return self._node_children.copy()
+
+        if not isinstance(query, Query):
+            query = Query(query)
+
+        return query.find_on(self)
+
+    def children_with(self, query):
+        if not isinstance(query, Query):
+            query = Query(query)
+
+        return Query(Node).with_child(query).find_on(self)
+
+    def find(self, query):
+        if not isinstance(query, Query):
+            query = Query(query)
+
+        return query.find_in(self)
+
+    def find_with(self, query):
+        if not isinstance(query, Query):
+            query = Query(query)
+
+        return Query(Node).with_child(query).find_in(self)
+
+    def get(self, query):
+        results = list(self.children(query))
+        if len(results) != 1:
+            raise ValueError(
+                "{} children found matching query, "
+                "expected 1".format(len(results))
+            )
+        return results[0]
+
+    def get_with(self, query):
+        results = list(self.children_with(query))
+        if len(results) != 1:
+            raise ValueError(
+                "{} children found matching query, "
+                "expected 1".format(len(results))
+            )
+        return results[0]
 
     def attach(self, node):
         """Add the given node as a child and update relevant indexes.
