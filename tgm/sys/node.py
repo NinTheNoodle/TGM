@@ -1,5 +1,5 @@
 from collections import defaultdict, Counter
-from inspect import getmro
+from inspect import getmro, getmembers
 
 
 class NodeMeta(type):
@@ -14,8 +14,12 @@ class Node(object, metaclass=NodeMeta):
         obj._node_children = set()
         obj._node_index = defaultdict(set)
 
+        # Register each base class in the index of the created object
         for key in getmro(type(obj)):
             obj.add_index_key(key, obj)
+
+        for call in _get_instantiation_calls(cls):
+            call(obj)
 
         return obj
 
@@ -109,3 +113,25 @@ def node_tree_summary(node, indent="    ", prefix=""):
 
         tree_string += "\n" + subtree_string
     return tree_string
+
+
+# Functions that get called when a given object is found in a node's namespace
+# {object: [functions_to_call]}
+_on_instantiation = {}
+
+
+def _get_instantiation_calls(cls):
+    """Find attributes on the given class that are in on_instantiation."""
+    calls = []
+    for _, attr_value in getmembers(cls):
+        try:
+            calls.extend(_on_instantiation[attr_value])
+        except (KeyError, TypeError):
+            pass
+    return calls
+
+
+def add_instantiation_call(obj, func):
+    """Add a function to called when a node is instantiated that contains the
+    given object."""
+    _on_instantiation.setdefault(obj, []).append(func)

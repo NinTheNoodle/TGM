@@ -1,15 +1,18 @@
 from tgm.game import World, Layer
 from tgm.sys import Entity, node_tree_summary, Component
-from random import randint
+from tgm.sys.node import add_instantiation_call
+
 
 class Ground(Entity):
     pass
 
 
 class Player(Entity):
+    hi = "hello there"
+
     def __init__(self):
         super().__init__()
-        #print("hi")
+        # print("hi")
 
 
 class Collider(Component):
@@ -17,6 +20,7 @@ class Collider(Component):
 
 
 def main():
+    add_instantiation_call("hello there", print)
     world = World()
     for i in range(20):
         layer = world.attach(Layer())
