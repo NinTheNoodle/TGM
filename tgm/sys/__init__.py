@@ -1,4 +1,4 @@
-from .node import Node
+from .node import Node, node_tree_summary
 
 from .entity import Entity
 from .component import Component

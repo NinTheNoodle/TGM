@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, Counter
 from inspect import getmro
 
 
@@ -55,6 +55,8 @@ class Node(object, metaclass=NodeMeta):
         """Add the given node as a child and update relevant indexes.
 
         This will detach the node from any parent it's currently attached to."""
+        self._node_children.add(node)
+
         if node.parent() is not None:
             node.parent().detach(node)
 
@@ -84,3 +86,26 @@ class Node(object, metaclass=NodeMeta):
 
         if self.parent() is not None:
             self.parent().detach(self)
+
+
+def node_tree_summary(node, indent="    ", prefix=""):
+    """Get a summary of all the the node tree starting from the given node."""
+    name = "{} in {}".format(type(node).__name__, type(node).__module__)
+    tree_string = prefix + name
+
+    child_trees = Counter()
+    for child in node.children(Node):
+        subtree_string = node_tree_summary(child, prefix=(prefix + indent))
+        child_trees[subtree_string] += 1
+
+    for subtree_string, count in child_trees.most_common():
+        indent_length = len(prefix + indent)
+
+        subtree_string = "{}[{}] {}".format(
+            subtree_string[:indent_length],
+            count,
+            subtree_string[indent_length:]
+        )
+
+        tree_string += "\n" + subtree_string
+    return tree_string
