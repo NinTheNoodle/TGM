@@ -9,7 +9,7 @@ class NodeMeta(type):
 class Node(object, metaclass=NodeMeta):
     """The base class for all objects in the scene graph."""
     def __new__(cls, *args, **kwargs):
-        obj = super().__new__(cls, *args)
+        obj = super().__new__(cls)
         obj._node_parent = None
         obj._node_children = set()
         obj._node_index = defaultdict(set)

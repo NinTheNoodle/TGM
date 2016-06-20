@@ -1,6 +1,9 @@
 from tgm.game import World, Layer
-from tgm.sys import Entity, node_tree_summary, Component
-from tgm.sys.node import add_instantiation_call
+from tgm.sys import Entity, node_tree_summary, Component, on, Event
+
+
+class SuperUpdate(Event):
+    pass
 
 
 class Ground(Entity):
@@ -8,11 +11,13 @@ class Ground(Entity):
 
 
 class Player(Entity):
-    hi = "hello there"
-
     def __init__(self):
         super().__init__()
-        # print("hi")
+        self._node_index[SuperUpdate].pop()()
+
+    @on(SuperUpdate)
+    def super_update(self):
+        print("The legend never dies")
 
 
 class Collider(Component):
@@ -20,13 +25,12 @@ class Collider(Component):
 
 
 def main():
-    add_instantiation_call("hello there", print)
     world = World()
     for i in range(20):
         layer = world.attach(Layer())
         for _ in range(4):
             player = layer.attach(Player())
-            for _ in range(1 + i % 2):
+            for _ in range(2):
                 player.attach(Collider())
     print(node_tree_summary(world))
 
