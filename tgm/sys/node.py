@@ -78,7 +78,8 @@ class Node(metaclass=NodeMeta):
         if not isinstance(query, Query):
             query = Query(query)
 
-        return Query(Node).with_child(query).find_on(self)
+        qq = Query(Node).child_matches(query)
+        return qq.find_on(self)
 
     def find(self, query):
         if not isinstance(query, Query):
@@ -90,19 +91,25 @@ class Node(metaclass=NodeMeta):
         if not isinstance(query, Query):
             query = Query(query)
 
-        return Query(Node).with_child(query).find_in(self)
+        return Query(Node).child_matches(query).find_in(self)
 
     def get(self, query):
-        results = list(self.children(query))
-        if len(results) != 1:
-            raise ValueError(
-                "{} children found matching query, "
-                "expected 1".format(len(results))
-            )
-        return results[0]
+        # if isinstance(query, Query):
+        results = set(self.children(query))
+        # else:
+        #     results = self._node_index[query] - {self}
+        assert len(results) == 1, (
+            "{} children found matching query, expected 1".format(len(results))
+        )
+        return results.pop()
 
     def get_with(self, query):
+        # if isinstance(query, Query):
         results = list(self.children_with(query))
+        # else:
+        #     results = (child
+        #                for child in self._node_index[query]
+        #                if )
         if len(results) != 1:
             raise ValueError(
                 "{} children found matching query, "

@@ -1,78 +1,103 @@
-def matches_key(node, key):
-    return node in node._node_index[key]
+class DummyQuery:
+    def optimal_key(self, node):
+        return object
 
+    def combine(self, other):
+        return other
 
-def join_tests(a, b):
-    return lambda node: a(node) and b(node)
+    def test(self, node):
+        return True
 
 
 class Query:
     def __init__(self,
-                 key,
-                 test=lambda _: True,
-                 stop_at=lambda _: False,
-                 subqueries=tuple()):
+                 key=object,
+                 condition=lambda _: True,
+                 parent_query=DummyQuery(),
+                 child_query=DummyQuery(),
+                 trim=lambda _: False):
         self.key = key
-        self.test = test
-        self.stop_at = stop_at
-        self.subqueries = subqueries
+        self.condition = condition
+        self.parent_query = parent_query
+        self.child_query = child_query
+        self.trim = trim
 
-    def filter(self, new_test):
-        return Query(self.key, join_tests(self.test, new_test),
-                     subqueries=self.subqueries)
+    def child_matches(self, child_query):
+        return self.combine(Query(child_query=child_query))
 
-    def with_child(self, query):
-        def filter_by_child(node):
-            return any(query.matches(child)
-                       for child in node._node_index[query.key]
-                       if child is not node)
+    def parent_matches(self, parent_query):
+        return self.combine(Query(parent_query=parent_query))
 
-        subqueries = self.subqueries + (query,)
+    def filter(self, condition):
+        return self.combine(Query(condition=condition))
 
-        return (Query(self.key, self.test, subqueries=subqueries)
-                .filter(filter_by_child))
+    def combine(self, other):
+        if isinstance(other, DummyQuery):
+            return self
 
-    def matches(self, node):
-        return matches_key(node, self.key) and self.test(node)
+        child_query = self.child_query.combine(other.child_query)
+        parent_query = self.parent_query.combine(other.parent_query)
 
-    def keys(self):
-        yield self.key
-        for query in self.subqueries:
-            for key in query.keys():
-                yield key
+        condition = lambda node: (self.condition(node) and
+                                  other.condition(node))
+
+        # Pick the most specific key
+        if issubclass(other.key, self.key):
+            key = other.key
+        elif issubclass(self.key, other.key):
+            key = self.key
+        else:
+            # If neither key is a superclass of the other
+            # pick one key and add the other as a condition
+            key = self.key
+            condition = lambda node: (condition(node) and
+                                      isinstance(node, other.key))
+
+        return Query(key, condition, parent_query, child_query)
 
     def optimal_key(self, node):
-        optimal = self.key
-        optimal_count = len(node._node_index[self.key])
-        for key in self.keys():
-            count = len(node._node_index[key])
-            if count < optimal_count:
-                optimal = key
-                optimal_count = count
-
-        return optimal, optimal_count
+        optimal_key = self.child_query.optimal_key(node)
+        if len(node._node_index[self.key]) < len(node._node_index[optimal_key]):
+            return self.key
+        return optimal_key
 
     def find_in(self, node):
-        key, _ = self.optimal_key(node)
+        key = self.optimal_key(node)
 
         for child in node._node_index[key]:
-            if not self.stop_at(child):
-                if child is node:
-                    continue
+            if child is node or self.trim(child):
+                continue
 
-                if matches_key(child, self.key) and self.test(child):
-                    yield child
+            if self.test(child):
+                yield child
 
-                for nested_child in self.find_in(child):
-                    yield nested_child
+            for nested_child in self.find_in(child):
+                yield nested_child
 
     def find_on(self, node):
-        for child in node._node_index[self.key]:
-            if not self.stop_at(child):
-                if child is node:
-                    continue
+        key = self.optimal_key(node)
 
-                if matches_key(child, self.key) and self.test(child):
-                    yield child
+        for child in node._node_index[key]:
+            if child is node or self.trim(child):
+                continue
 
-    # TODO: __repr__ and refactor
+            if self.test(child):
+                yield child
+
+    def test(self, node):
+        if not isinstance(node, self.key):
+            return False
+
+        if not isinstance(self.child_query, DummyQuery):
+            optimal_key = self.child_query.optimal_key(node)
+
+            if not any(self.child_query.test(child)
+                       for child in node._node_index[optimal_key]
+                       if child is not node):
+                return False
+
+        if not isinstance(self.parent_query, DummyQuery):
+            if not self.parent_query.test(node._node_parent):
+                return False
+
+        return True
