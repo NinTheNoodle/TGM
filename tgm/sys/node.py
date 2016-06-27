@@ -12,7 +12,7 @@ class Node(metaclass=NodeMeta):
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)
         obj._node_parent = None
-        obj._node_children = set()
+        obj._node_children = defaultdict(set)
         obj._node_index = defaultdict(set)
 
         # Register each base class in the index of the created object
@@ -66,20 +66,18 @@ class Node(metaclass=NodeMeta):
     def children(self, query):
         """Get all the immediate children of this object that fulfil the query.
         """
-        if query is Node:
-            return self._node_children.copy()
-
         if not isinstance(query, Query):
-            query = Query(query)
+            return self._node_children[query]
 
         return query.find_on(self)
 
     def children_with(self, query):
         if not isinstance(query, Query):
-            query = Query(query)
+            return (child
+                    for child in self._node_index[query]
+                    if child._node_children[query])
 
-        qq = Query(Node).child_matches(query)
-        return qq.find_on(self)
+        return Query(Node).child_matches(query).find_on(self)
 
     def find(self, query):
         if not isinstance(query, Query):
@@ -94,34 +92,33 @@ class Node(metaclass=NodeMeta):
         return Query(Node).child_matches(query).find_in(self)
 
     def get(self, query):
-        # if isinstance(query, Query):
-        results = set(self.children(query))
-        # else:
-        #     results = self._node_index[query] - {self}
+        if isinstance(query, Query):
+            results = tuple(self.children(query))
+        else:
+            results = tuple(self._node_children[query])
         assert len(results) == 1, (
             "{} children found matching query, expected 1".format(len(results))
         )
-        return results.pop()
+        return results[0]
 
     def get_with(self, query):
-        # if isinstance(query, Query):
-        results = list(self.children_with(query))
-        # else:
-        #     results = (child
-        #                for child in self._node_index[query]
-        #                if )
-        if len(results) != 1:
-            raise ValueError(
-                "{} children found matching query, "
-                "expected 1".format(len(results))
-            )
+        if isinstance(query, Query):
+            results = tuple(self.children_with(query))
+        else:
+            results = [child
+                       for child in self._node_index[query]
+                       if child._node_children[query]]
+        assert len(results) == 1, (
+            "{} children found matching query, expected 1".format(len(results))
+        )
         return results[0]
 
     def attach(self, node):
         """Add the given node as a child and update relevant indexes.
 
         This will detach the node from any parent it's currently attached to."""
-        self._node_children.add(node)
+        for key in getmro(type(node)):
+            self._node_children[key].add(node)
 
         if node.parent() is not None:
             node.parent().detach(node)
@@ -139,7 +136,8 @@ class Node(metaclass=NodeMeta):
             if node_set:
                 self.remove_index_key(key, node)
 
-        self._node_children.remove(node)
+        for key in getmro(type(node)):
+            self._node_children[key].remove(node)
         node._node_parent = None
 
         return node

@@ -37,8 +37,8 @@ def main():
     # print(node_tree_summary(world))
 
     def profile():
-        for _ in range(60000):
-            player.get(Query(Collider))
+        for _ in range(20000):
+            player.children(object)
 
     pr = cProfile.Profile()
 
