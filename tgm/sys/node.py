@@ -1,9 +1,12 @@
 from collections import defaultdict, Counter
 from inspect import getmro, getmembers
-from tgm.sys import Query
+from tgm.sys import Queryable, Query, make_query
 
 
-class NodeMeta(type):
+# World > Layer > Player[Collider]
+
+
+class NodeMeta(Queryable, type):
     pass
 
 
@@ -39,10 +42,7 @@ class Node(metaclass=NodeMeta):
             self.parent().remove_index_key(key, self)
 
     def matches(self, query):
-        if not isinstance(query, Query):
-            query = Query(query)
-
-        return query.matches(self)
+        return make_query(query).matches(self)
 
     def parent(self, query=None):
         """Return the closest of the object's parents that satisfies the query.
@@ -79,17 +79,25 @@ class Node(metaclass=NodeMeta):
 
         return Query(Node).child_matches(query).find_on(self)
 
-    def find(self, query):
+    def find(self, query, trim=lambda _: False):
+        if isinstance(trim, Queryable):
+            trim = make_query(trim).test
+
         if not isinstance(query, Query):
-            query = Query(query)
+            query = Query(query, trim=trim)
+        else:
+            query = query.combine(Query(trim=trim))
 
         return query.find_in(self)
 
-    def find_with(self, query):
+    def find_with(self, query, trim=lambda _: False):
+        if isinstance(trim, Queryable):
+            trim = make_query(trim).test
+
         if not isinstance(query, Query):
             query = Query(query)
 
-        return Query(Node).child_matches(query).find_in(self)
+        return Query(Node, trim=trim, child_query=query).find_in(self)
 
     def get(self, query):
         if isinstance(query, Query):

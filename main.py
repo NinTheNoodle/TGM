@@ -1,7 +1,8 @@
 from tgm.game import World, Layer
-from tgm.sys import Entity, node_tree_summary, Component, on, Event, Query
+from tgm.sys import Entity, node_tree_summary, Component, on, Event, Query, Node
 import cProfile
 import pstats
+from random import randint
 
 
 class SuperUpdate(Event):
@@ -11,10 +12,14 @@ class SuperUpdate(Event):
 class Ground(Entity):
     pass
 
+blah = True
 
 class Player(Entity):
     def __init__(self):
+        global blah
         super().__init__()
+        self.r = blah
+        blah = not blah
         list(self._node_index[SuperUpdate])[0]()
 
     @on(SuperUpdate)
@@ -36,9 +41,19 @@ def main():
                 player.attach(Collider())
     # print(node_tree_summary(world))
 
+    # print(world.parent())
+    # print(list(
+    #     world.find(Collider, trim=Node["r", lambda x: x.r])
+    # ))
+
+    Query(Node,
+          child_query=Query(Collider),
+          condition=lambda x: hasattr(x, "r") and getattr(x, "r") == True)
+
     def profile():
         for _ in range(20000):
-            player.children(object)
+            # Query(Node).child_matches(Query(Collider)).filter(lambda x: hasattr(x, "r") and getattr(x, "r") == True)
+            Node[Collider, "r": True]
 
     pr = cProfile.Profile()
 

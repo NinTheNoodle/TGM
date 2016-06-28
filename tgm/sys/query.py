@@ -1,4 +1,45 @@
-class DummyQuery:
+def make_child_query(item):
+    if isinstance(item, type):
+        return Query(child_query=Query(item))
+    elif isinstance(item, Query):
+        return Query(child_query=item)
+    elif isinstance(item, slice):
+        attr, value = item.start, item.stop
+        return Query(
+            condition=lambda x: hasattr(x, attr) and getattr(x, attr) == value
+        )
+    elif isinstance(item, str):
+        return Query(condition=lambda x: hasattr(x, item))
+    elif callable(item):
+        return Query(condition=item)
+    elif isinstance(item, tuple):
+        query = Query()
+        for child in item:
+            query = query.combine(make_child_query(child))
+        return query
+
+    raise TypeError(
+        "invalid object '{}' in query.".format(item)
+    )
+
+
+def make_query(item):
+    if isinstance(item, Query):
+        return item
+    return Query(item)
+
+
+class Queryable:
+    def __getitem__(self, item):
+        return Query(self).combine(make_child_query(item))
+
+    def __rshift__(self, rhs):
+        rhs = make_query(rhs)
+        lhs = make_query(self)
+        return rhs.parent_matches(lhs)
+
+
+class DummyQuery(Queryable):
     def optimal_key(self, node):
         return object
 
@@ -9,7 +50,7 @@ class DummyQuery:
         return True
 
 
-class Query:
+class Query(Queryable):
     def __init__(self,
                  key=object,
                  condition=lambda _: True,
@@ -38,8 +79,11 @@ class Query:
         child_query = self.child_query.combine(other.child_query)
         parent_query = self.parent_query.combine(other.parent_query)
 
-        condition = lambda node: (self.condition(node) and
-                                  other.condition(node))
+        def condition(node):
+            return self.condition(node) and other.condition(node)
+
+        def trim(node):
+            return self.trim(node) or other.trim(node)
 
         # Pick the most specific key
         if issubclass(other.key, self.key):
@@ -50,10 +94,12 @@ class Query:
             # If neither key is a superclass of the other
             # pick one key and add the other as a condition
             key = self.key
-            condition = lambda node: (condition(node) and
-                                      isinstance(node, other.key))
+            old_condition = condition
 
-        return Query(key, condition, parent_query, child_query)
+            def condition(node):
+                return old_condition(node) and isinstance(node, other.key)
+
+        return Query(key, condition, parent_query, child_query, trim)
 
     def optimal_key(self, node):
         optimal_key = self.child_query.optimal_key(node)
@@ -86,6 +132,9 @@ class Query:
 
     def test(self, node):
         if not isinstance(node, self.key):
+            return False
+
+        if not self.condition(node):
             return False
 
         if not isinstance(self.child_query, DummyQuery):
