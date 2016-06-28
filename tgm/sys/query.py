@@ -1,34 +1,3 @@
-def make_child_query(item):
-    if isinstance(item, type):
-        return Query(child_query=Query(item))
-    elif isinstance(item, Query):
-        return Query(child_query=item)
-    elif isinstance(item, slice):
-        attr, value = item.start, item.stop
-        return Query(
-            condition=lambda x: hasattr(x, attr) and getattr(x, attr) == value
-        )
-    elif isinstance(item, str):
-        return Query(condition=lambda x: hasattr(x, item))
-    elif callable(item):
-        return Query(condition=item)
-    elif isinstance(item, tuple):
-        query = Query()
-        for child in item:
-            query = query.combine(make_child_query(child))
-        return query
-
-    raise TypeError(
-        "invalid object '{}' in query.".format(item)
-    )
-
-
-def make_query(item):
-    if isinstance(item, Query):
-        return item
-    return Query(item)
-
-
 class Queryable:
     def __getitem__(self, item):
         return Query(self).combine(make_child_query(item))
@@ -150,3 +119,47 @@ class Query(Queryable):
                 return False
 
         return True
+
+
+def query_slice(item):
+    attr, value = item.start, item.stop
+    return Query(
+        condition=lambda x: hasattr(x, attr) and getattr(x, attr) == value
+    )
+
+
+def query_tuple(item):
+    query = Query()
+    for child in item:
+        query = query.combine(make_child_query(child))
+    return query
+
+
+# How to construct a child query for a given input type
+child_query_cases = {
+    Query: lambda item: Query(child_query=item),
+    slice: query_slice,
+    tuple: query_tuple,
+    str: lambda item: Query(condition=lambda x: hasattr(x, item)),
+    type: lambda item: Query(child_query=Query(item))
+}
+
+
+def make_child_query(item):
+    try:
+        return child_query_cases[type(item)](item)
+    except KeyError:
+        pass
+
+    if callable(item):
+        return Query(condition=item)
+
+    raise TypeError(
+        "invalid object '{}' in query.".format(item)
+    )
+
+
+def make_query(item):
+    if isinstance(item, Query):
+        return item
+    return Query(item)

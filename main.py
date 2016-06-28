@@ -46,14 +46,13 @@ def main():
     #     world.find(Collider, trim=Node["r", lambda x: x.r])
     # ))
 
-    Query(Node,
-          child_query=Query(Collider),
-          condition=lambda x: hasattr(x, "r") and getattr(x, "r") == True)
+    # Query(Node,
+    #       child_query=Query(Collider),
+    #       condition=lambda x: hasattr(x, "r") and getattr(x, "r") == True)
 
     def profile():
         for _ in range(20000):
-            # Query(Node).child_matches(Query(Collider)).filter(lambda x: hasattr(x, "r") and getattr(x, "r") == True)
-            Node[Collider, "r": True]
+            Node["h", "e", "l", "l", "o"]
 
     pr = cProfile.Profile()
 
