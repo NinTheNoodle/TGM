@@ -52,7 +52,7 @@ class Node(metaclass=NodeMeta):
         return node
 
     def destroy(self):
-        """Destroy the object and all its children from the game.
+        """Destroy the object and all its descendents from the game.
 
         Recursively destroys each child node then destroys the object.
 
@@ -116,7 +116,13 @@ class Node(metaclass=NodeMeta):
         return results[0]
 
     def find(self, query, trim=lambda _: False):
-        """
+        """Return all children, their children, etc. which match the query.
+
+        If a node matches the trim condition (function or query), the node
+        and all of its descendents will be ignored.
+
+        >>> world.find(Enemy)
+        [<mygame.enemy.Enemy at 318f9f0>, <mygame.enemy.Enemy at 318e9f0>]
         """
         if isinstance(trim, Queryable):
             trim = make_query(trim).test
@@ -129,6 +135,11 @@ class Node(metaclass=NodeMeta):
         return query.find_in(self)
 
     def children_with(self, query):
+        """Return immediate children which have a child matching the query.
+
+        >>> layer.children_with(Collider)
+        [<mygame.player.Player at 318f9f0>, <mygame.enemy.Enemy at 319f9f0>]
+        """
         if not isinstance(query, Query):
             return (child
                     for child in self._node_index[query]
@@ -137,6 +148,7 @@ class Node(metaclass=NodeMeta):
         return Query(Node).child_matches(query).find_on(self)
 
     def get_with(self, query):
+        """Return the child which has a child matching a given query."""
         if isinstance(query, Query):
             results = tuple(self.children_with(query))
         else:
@@ -149,6 +161,14 @@ class Node(metaclass=NodeMeta):
         return results[0]
 
     def find_with(self, query, trim=lambda _: False):
+        """Find descendents which have a child matching the query.
+
+        If a node matches the trim condition (function or query), the node
+        and all of its descendents will be ignored.
+
+        >>> world.find_with(Collider)
+        [<mygame.enemy.Enemy at 318f9f0>, <mygame.player.Player at 318e9f0>]
+        """
         if isinstance(trim, Queryable):
             trim = make_query(trim).test
 
@@ -158,6 +178,13 @@ class Node(metaclass=NodeMeta):
         return Query(Node, trim=trim, child_query=query).find_in(self)
 
     def matches(self, query):
+        """Return if the node matches the given query.
+
+        >>> player.match(Player)
+        True
+        >>> player.match(Player["health", lambda player: player.health > 0])
+        True
+        """
         return make_query(query).matches(self)
 
     def _detach(self, node):

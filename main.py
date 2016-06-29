@@ -41,7 +41,10 @@ def main():
                 player.attach(Collider())
     # print(node_tree_summary(world))
 
-    print(world)
+    # print(world)
+
+    print(list(world.find(Player[SuperUpdate])))
+
     # print(list(
     #     world.find(Collider, trim=Node["r", lambda x: x.r])
     # ))

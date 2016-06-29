@@ -9,7 +9,7 @@ class Queryable:
 
 
 class DummyQuery(Queryable):
-    def optimal_key(self, node):
+    def _optimal_key(self, node):
         return object
 
     def combine(self, other):
@@ -26,11 +26,43 @@ class Query(Queryable):
                  parent_query=DummyQuery(),
                  child_query=DummyQuery(),
                  trim=lambda _: False):
-        self.key = key
-        self.condition = condition
-        self.parent_query = parent_query
-        self.child_query = child_query
-        self.trim = trim
+        self._key = key
+        self._condition = condition
+        self._parent_query = parent_query
+        self._child_query = child_query
+        self._trim = trim
+
+    def combine(self, other):
+        if isinstance(other, DummyQuery):
+            return self
+
+        child_query = self._child_query.combine(other._child_query)
+        parent_query = self._parent_query.combine(other._parent_query)
+
+        def condition(node):
+            return self._condition(node) and other._condition(node)
+
+        def trim(node):
+            return self._trim(node) or other._trim(node)
+
+        # Pick the most specific key
+        if issubclass(other._key, self._key):
+            key = other._key
+        elif issubclass(self._key, other._key):
+            key = self._key
+        else:
+            # If neither key is a superclass of the other
+            # pick one key and add the other as a condition
+            key = self._key
+            old_condition = condition
+
+            def condition(node):
+                return old_condition(node) and isinstance(node, other._key)
+
+        return Query(key, condition, parent_query, child_query, trim)
+
+    def filter(self, condition):
+        return self.combine(Query(condition=condition))
 
     def child_matches(self, child_query):
         return self.combine(Query(child_query=child_query))
@@ -38,49 +70,32 @@ class Query(Queryable):
     def parent_matches(self, parent_query):
         return self.combine(Query(parent_query=parent_query))
 
-    def filter(self, condition):
-        return self.combine(Query(condition=condition))
+    def test(self, node):
+        if not isinstance(node, self._key):
+            return False
 
-    def combine(self, other):
-        if isinstance(other, DummyQuery):
-            return self
+        if not self._condition(node):
+            return False
 
-        child_query = self.child_query.combine(other.child_query)
-        parent_query = self.parent_query.combine(other.parent_query)
+        if not isinstance(self._child_query, DummyQuery):
+            optimal_key = self._child_query._optimal_key(node)
 
-        def condition(node):
-            return self.condition(node) and other.condition(node)
+            if not any(self._child_query.test(child)
+                       for child in node._node_index[optimal_key]
+                       if child is not node):
+                return False
 
-        def trim(node):
-            return self.trim(node) or other.trim(node)
+        if not isinstance(self._parent_query, DummyQuery):
+            if not self._parent_query.test(node._node_parent):
+                return False
 
-        # Pick the most specific key
-        if issubclass(other.key, self.key):
-            key = other.key
-        elif issubclass(self.key, other.key):
-            key = self.key
-        else:
-            # If neither key is a superclass of the other
-            # pick one key and add the other as a condition
-            key = self.key
-            old_condition = condition
-
-            def condition(node):
-                return old_condition(node) and isinstance(node, other.key)
-
-        return Query(key, condition, parent_query, child_query, trim)
-
-    def optimal_key(self, node):
-        optimal_key = self.child_query.optimal_key(node)
-        if len(node._node_index[self.key]) < len(node._node_index[optimal_key]):
-            return self.key
-        return optimal_key
+        return True
 
     def find_in(self, node):
-        key = self.optimal_key(node)
+        key = self._optimal_key(node)
 
         for child in node._node_index[key]:
-            if child is node or self.trim(child):
+            if child is node or self._trim(child):
                 continue
 
             if self.test(child):
@@ -90,35 +105,24 @@ class Query(Queryable):
                 yield nested_child
 
     def find_on(self, node):
-        key = self.optimal_key(node)
+        key = self._optimal_key(node)
 
         for child in node._node_index[key]:
-            if child is node or self.trim(child):
+            if child is node or self._trim(child):
                 continue
 
             if self.test(child):
                 yield child
 
-    def test(self, node):
-        if not isinstance(node, self.key):
-            return False
+    def _optimal_key(self, node):
+        optimal_key = self._child_query._optimal_key(node)
 
-        if not self.condition(node):
-            return False
+        key_count = len(node._node_index[self._key])
+        optimal_key_count = len(node._node_index[optimal_key])
 
-        if not isinstance(self.child_query, DummyQuery):
-            optimal_key = self.child_query.optimal_key(node)
-
-            if not any(self.child_query.test(child)
-                       for child in node._node_index[optimal_key]
-                       if child is not node):
-                return False
-
-        if not isinstance(self.parent_query, DummyQuery):
-            if not self.parent_query.test(node._node_parent):
-                return False
-
-        return True
+        if key_count < optimal_key_count:
+            return self._key
+        return optimal_key
 
 
 def query_slice(item):
@@ -150,6 +154,10 @@ def make_child_query(item):
         return child_query_cases[type(item)](item)
     except KeyError:
         pass
+
+    # special fallback check for where item has a metaclass
+    if isinstance(item, type):
+        return Query(child_query=Query(item))
 
     if callable(item):
         return Query(condition=item)
