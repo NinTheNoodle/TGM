@@ -3,10 +3,8 @@ from inspect import getmro, getmembers
 from tgm.sys import Queryable, Query, make_query
 
 
-# World > Layer > Player[Collider]
-
-
 class NodeMeta(Queryable, type):
+    """The metaclass which makes Node subclasses into Queryable instances."""
     pass
 
 
@@ -14,40 +12,67 @@ class Node(metaclass=NodeMeta):
     """The base class for all objects in the scene graph."""
     def __new__(cls, *args, **kwargs):
         obj = super().__new__(cls)
+
+        # The attributes representing the node's position on the scene
         obj._node_parent = None
         obj._node_children = defaultdict(set)
+
+        # Maps types to child nodes which are of given type or have a
+        # descendent of given type.  If self is of this type, it is included
         obj._node_index = defaultdict(set)
 
         # Register each base class in the index of the created object
         for key in getmro(type(obj)):
-            obj.add_index_key(key, obj)
+            obj._add_index_key(key, obj)
 
         for call in _get_instantiation_calls(cls):
             call(obj)
 
         return obj
 
-    def add_index_key(self, key, node):
-        """Register this object as having a given key."""
-        if (self.parent() is not None) and (not self._node_index[key]):
-            self.parent().add_index_key(key, self)
+    def attach(self, node):
+        """Add the given node as a child.
 
-        self._node_index[key].add(node)
+        Detaches the node from any parent it's currently attached to.
 
-    def remove_index_key(self, key, node):
-        """Unregister this object as having a given key."""
-        self._node_index[key].remove(node)
+        >>> world.attach(Player("bob"))
+        <mygame.player.Player at 318f9f0>
+        """
+        for key in getmro(type(node)):
+            self._node_children[key].add(node)
 
-        if (self.parent() is not None) and (not self._node_index[key]):
-            self.parent().remove_index_key(key, self)
+        if node.parent() is not None:
+            node.parent()._detach(node)
 
-    def matches(self, query):
-        return make_query(query).matches(self)
+        node._node_parent = self
+        for key, node_set in node._node_index.items():
+            if node_set:
+                self._add_index_key(key, node)
+
+        return node
+
+    def destroy(self):
+        """Destroy the object and all its children from the game.
+
+        Recursively destroys each child node then destroys the object.
+
+        >>> player.destroy()
+        None
+        """
+        for child in self.children(Node):
+            child.destroy()
+
+        if self.parent() is not None:
+            self.parent()._detach(self)
 
     def parent(self, query=None):
-        """Return the closest of the object's parents that satisfies the query.
+        """Return the first parent that satisfies the query, starting with the
+        direct parent.
 
         If no query is given then the object's direct parent will be returned.
+
+        >>> self.parent(World)
+        <tgm.game.world.World at 329f8f0>
         """
         if query is None or query is Node:
             return self._node_parent
@@ -64,22 +89,35 @@ class Node(metaclass=NodeMeta):
         raise ValueError("No parent found matching the given query")
 
     def children(self, query):
-        """Get all the immediate children of this object that fulfil the query.
+        """Return immediate children which match the query.
+
+        >>> list(world.children(Entity))
+        [<mygame.player.Player at 318f9f0>, <mygame.enemy.Enemy at 319f9f0>]
         """
         if not isinstance(query, Query):
             return self._node_children[query]
 
         return query.find_on(self)
 
-    def children_with(self, query):
-        if not isinstance(query, Query):
-            return (child
-                    for child in self._node_index[query]
-                    if child._node_children[query])
+    def get(self, query):
+        """Return the child that matches the query.
 
-        return Query(Node).child_matches(query).find_on(self)
+        Expects only one child to match the query.
+
+        TODO: example
+        """
+        if isinstance(query, Query):
+            results = tuple(self.children(query))
+        else:
+            results = tuple(self._node_children[query])
+        assert len(results) == 1, (
+            "{} children found matching query, expected 1".format(len(results))
+        )
+        return results[0]
 
     def find(self, query, trim=lambda _: False):
+        """
+        """
         if isinstance(trim, Queryable):
             trim = make_query(trim).test
 
@@ -90,24 +128,13 @@ class Node(metaclass=NodeMeta):
 
         return query.find_in(self)
 
-    def find_with(self, query, trim=lambda _: False):
-        if isinstance(trim, Queryable):
-            trim = make_query(trim).test
-
+    def children_with(self, query):
         if not isinstance(query, Query):
-            query = Query(query)
+            return (child
+                    for child in self._node_index[query]
+                    if child._node_children[query])
 
-        return Query(Node, trim=trim, child_query=query).find_in(self)
-
-    def get(self, query):
-        if isinstance(query, Query):
-            results = tuple(self.children(query))
-        else:
-            results = tuple(self._node_children[query])
-        assert len(results) == 1, (
-            "{} children found matching query, expected 1".format(len(results))
-        )
-        return results[0]
+        return Query(Node).child_matches(query).find_on(self)
 
     def get_with(self, query):
         if isinstance(query, Query):
@@ -121,28 +148,23 @@ class Node(metaclass=NodeMeta):
         )
         return results[0]
 
-    def attach(self, node):
-        """Add the given node as a child and update relevant indexes.
+    def find_with(self, query, trim=lambda _: False):
+        if isinstance(trim, Queryable):
+            trim = make_query(trim).test
 
-        This will detach the node from any parent it's currently attached to."""
-        for key in getmro(type(node)):
-            self._node_children[key].add(node)
+        if not isinstance(query, Query):
+            query = Query(query)
 
-        if node.parent() is not None:
-            node.parent().detach(node)
+        return Query(Node, trim=trim, child_query=query).find_in(self)
 
-        node._node_parent = self
+    def matches(self, query):
+        return make_query(query).matches(self)
+
+    def _detach(self, node):
+        """Detach the given node from its parent."""
         for key, node_set in node._node_index.items():
             if node_set:
-                self.add_index_key(key, node)
-
-        return node
-
-    def detach(self, node):
-        """Detach the given node from its parent and update relevant indexes."""
-        for key, node_set in node._node_index.items():
-            if node_set:
-                self.remove_index_key(key, node)
+                self._remove_index_key(key, node)
 
         for key in getmro(type(node)):
             self._node_children[key].remove(node)
@@ -150,14 +172,26 @@ class Node(metaclass=NodeMeta):
 
         return node
 
-    def destroy(self):
-        """Recursively destroy each of the object's children then destroy
-        the object."""
-        for child in self.children(Node):
-            child.destroy()
+    def _add_index_key(self, key, node):
+        """Register this object as having a given key."""
+        if (self.parent() is not None) and (not self._node_index[key]):
+            self.parent()._add_index_key(key, self)
 
-        if self.parent() is not None:
-            self.parent().detach(self)
+        self._node_index[key].add(node)
+
+    def _remove_index_key(self, key, node):
+        """Unregister this object as having a given key."""
+        self._node_index[key].remove(node)
+
+        if (self.parent() is not None) and (not self._node_index[key]):
+            self.parent()._remove_index_key(key, self)
+
+    def __repr__(self):
+        return "<{module}.{type} at {id:x}>".format(
+            type=type(self).__name__,
+            module=type(self).__module__,
+            id=id(self)
+        )
 
 
 def node_tree_summary(node, indent="    ", prefix=""):

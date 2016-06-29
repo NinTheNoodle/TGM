@@ -41,7 +41,7 @@ def main():
                 player.attach(Collider())
     # print(node_tree_summary(world))
 
-    # print(world.parent())
+    print(world)
     # print(list(
     #     world.find(Collider, trim=Node["r", lambda x: x.r])
     # ))
@@ -50,16 +50,16 @@ def main():
     #       child_query=Query(Collider),
     #       condition=lambda x: hasattr(x, "r") and getattr(x, "r") == True)
 
-    def profile():
-        for _ in range(20000):
-            Node["h", "e", "l", "l", "o"]
+    # def profile():
+    #     for _ in range(20000):
+    #         Node["h", "e", "l", "l", "o"]
 
-    pr = cProfile.Profile()
+    # pr = cProfile.Profile()
 
-    pr.runcall(profile)
-    pr.create_stats()
-    stats = pstats.Stats(pr)
-    stats.print_stats(100)
+    # pr.runcall(profile)
+    # pr.create_stats()
+    # stats = pstats.Stats(pr)
+    # stats.print_stats(100)
 
 
 if __name__ == "__main__":
