@@ -144,8 +144,7 @@ child_query_cases = {
     Query: lambda item: Query(child_query=item),
     slice: query_slice,
     tuple: query_tuple,
-    str: lambda item: Query(condition=lambda x: hasattr(x, item)),
-    type: lambda item: Query(child_query=Query(item))
+    str: lambda item: Query(condition=lambda x: hasattr(x, item))
 }
 
 
@@ -157,7 +156,10 @@ def make_child_query(item):
 
     # special fallback check for where item has a metaclass
     if isinstance(item, type):
-        return Query(child_query=Query(item))
+        child_query_cases[type(item)] = lambda item: Query(
+            child_query=Query(item)
+        )
+        return child_query_cases[type(item)](item)
 
     if callable(item):
         return Query(condition=item)
