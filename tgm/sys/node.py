@@ -52,7 +52,7 @@ class Node(metaclass=NodeMeta):
         return node
 
     def destroy(self):
-        """Destroy the object and all its descendents from the game.
+        """Destroy the object and all its descendants from the game.
 
         Recursively destroys each child node then destroys the object.
 
@@ -77,12 +77,11 @@ class Node(metaclass=NodeMeta):
         if query is None or query is Node:
             return self._node_parent
 
-        if not isinstance(query, Query):
-            query = Query(query)
+        query = make_query(query)
 
         parent = self._node_parent
         while parent is not None:
-            if query.matches(parent):
+            if query.test(parent):
                 return parent
             parent = parent._node_parent
 
