@@ -77,11 +77,15 @@ class Node(metaclass=NodeMeta):
         if query is None or query is Node:
             return self._node_parent
 
-        query = make_query(query)
+        if isinstance(query, Query):
+            test = query.test
+        else:
+            def test(node):
+                return isinstance(node, query)
 
         parent = self._node_parent
         while parent is not None:
-            if query.test(parent):
+            if test(parent):
                 return parent
             parent = parent._node_parent
 
@@ -94,7 +98,7 @@ class Node(metaclass=NodeMeta):
         [<mygame.player.Player at 318f9f0>, <mygame.enemy.Enemy at 319f9f0>]
         """
         if not isinstance(query, Query):
-            return self._node_children[query]
+            return iter(self._node_children[query])
 
         return query.find_on(self)
 
@@ -126,10 +130,10 @@ class Node(metaclass=NodeMeta):
         if isinstance(trim, Queryable):
             trim = make_query(trim).test
 
-        if not isinstance(query, Query):
-            query = Query(query, trim=trim)
+        if isinstance(query, Query):
+            query = query.trim(trim)
         else:
-            query = query.combine(Query(trim=trim))
+            query = Query(query, trim=trim)
 
         return query.find_in(self)
 
@@ -142,7 +146,7 @@ class Node(metaclass=NodeMeta):
         if not isinstance(query, Query):
             return (child
                     for child in self._node_index[query]
-                    if child._node_children[query])
+                    if child is not self and child._node_children[query])
 
         return Query(Node).child_matches(query).find_on(self)
 
@@ -153,7 +157,7 @@ class Node(metaclass=NodeMeta):
         else:
             results = [child
                        for child in self._node_index[query]
-                       if child._node_children[query]]
+                       if child is not self and child._node_children[query]]
         assert len(results) == 1, (
             "{} children found matching query, expected 1".format(len(results))
         )
@@ -171,9 +175,7 @@ class Node(metaclass=NodeMeta):
         if isinstance(trim, Queryable):
             trim = make_query(trim).test
 
-        if not isinstance(query, Query):
-            query = Query(query)
-
+        query = make_query(query)
         return Query(Node, trim=trim, child_query=query).find_in(self)
 
     def matches(self, query):
@@ -184,7 +186,7 @@ class Node(metaclass=NodeMeta):
         >>> player.match(Player["health", lambda player: player.health > 0])
         True
         """
-        return make_query(query).matches(self)
+        return make_query(query).test(self)
 
     def _detach(self, node):
         """Detach the given node from its parent."""

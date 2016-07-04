@@ -1,6 +1,6 @@
 from unittest import TestCase
 from tgm.sys.node import NodeMeta
-from tgm.sys import Queryable, Node, Query
+from tgm.sys import Queryable, Node, Query, node_tree_summary
 from inspect import getmro
 from unittest.mock import patch, Mock
 
@@ -83,14 +83,21 @@ class TestNode(TestCase):
         self.assertIs(child.parent(), parent)
         self.assertIs(child.parent(Node), parent)
 
-        # get specific parent
+        # get specific parent full query
+        class Level(Node):
+            pass
+
         game = Node()
-        level = game.attach(Node())
+        level = game.attach(Level())
         layer = level.attach(Node())
         player = layer.attach(Node())
 
-        with patch("tgm.sys.query.Query.test", lambda _, obj: obj is level):
+        with patch("tgm.sys.query.Query.test",
+                   lambda _, obj: isinstance(obj, Level)):
             self.assertIs(player.parent(Query()), level)
+
+        # get specific parent key only
+        self.assertIs(player.parent(Level), level)
 
         # check no valid parent
         with patch("tgm.sys.query.Query.test", lambda _, obj: False):
@@ -102,7 +109,7 @@ class TestNode(TestCase):
 
         # check finding a child
         child = node.attach(Node())
-        self.assertEqual(node.children(Node), {child})
+        self.assertEqual(list(node.children(Node)), [child])
 
         # check full query call
         with patch("tgm.sys.query.Query.find_on") as mock:
@@ -114,3 +121,73 @@ class TestNode(TestCase):
         parent = Node()
         child = parent.attach(Node())
         self.assertIs(parent.get(Node), child)
+
+    def test_find(self):
+        node = Node()
+        with patch("tgm.sys.query.Query.find_in") as mock:
+            # check call with query
+            node.find(Query())
+            mock.assert_called_once_with(node)
+
+            # check call with key
+            mock.reset_mock()
+            node.find(Node)
+            mock.assert_called_once_with(node)
+
+        # check trimming full query
+        def trim(_):
+            return False
+
+        with patch("tgm.sys.query.Query.trim") as mock:
+            node.find(Query(), trim=trim)
+            mock.assert_called_once_with(trim)
+
+        # check trimming key only
+        query_mock = Mock()
+
+        # for allowing isinstance(..., Query) to work
+        class QueryMock(Query):
+            def __new__(cls, *args, **kwargs):
+                return query_mock(*args, **kwargs)
+
+        with patch("tgm.sys.node.Query", QueryMock):
+            node.find(Node, trim=trim)
+            query_mock.assert_called_once_with(Node, trim=trim)
+
+    def test_children_with(self):
+        node = Node()
+
+        # check finding a child
+        child = node.attach(Node())
+        child.attach(Node())
+        self.assertEqual(list(node.children_with(Node)), [child])
+
+        # check full query call
+        with patch("tgm.sys.query.Query.find_on") as mock:
+            node.children(Query())
+            mock.assert_called_once_with(node)
+
+    def test_get_with(self):
+        # check that the child is returned
+        parent = Node()
+        child = parent.attach(Node())
+        child.attach(Node())
+        self.assertIs(parent.get_with(Node), child)
+
+    def test_find_with(self):
+        node = Node()
+        with patch("tgm.sys.query.Query.find_in") as mock:
+            # check call with query
+            node.find_with(Query())
+            mock.assert_called_once_with(node)
+
+            # check call with key
+            mock.reset_mock()
+            node.find_with(Node)
+            mock.assert_called_once_with(node)
+
+    def test_matches(self):
+        node = Node()
+        with patch("tgm.sys.query.Query.test") as mock:
+            node.matches(Query())
+            mock.assert_called_once_with(node)
