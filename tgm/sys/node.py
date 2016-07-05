@@ -251,7 +251,8 @@ _on_instantiation = {}
 
 
 def _get_instantiation_calls(cls):
-    """Find attributes on the given class that are in on_instantiation."""
+    """Find every on_instantiation call associated with an attribute on the
+    given class."""
     calls = []
     for _, attr_value in getmembers(cls):
         try:

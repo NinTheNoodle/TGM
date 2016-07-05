@@ -1,13 +1,8 @@
 from unittest import TestCase
-from tgm.sys.node import NodeMeta
-from tgm.sys import Queryable, Node, Query, node_tree_summary
+from tgm.sys.node import _get_instantiation_calls, _on_instantiation
+from tgm.sys import Node, Query, add_instantiation_call
 from inspect import getmro
 from unittest.mock import patch, Mock
-
-
-class TestNodeMeta(TestCase):
-    def test_queryable(self):
-        self.assertTrue(issubclass(NodeMeta, Queryable))
 
 
 class TestNode(TestCase):
@@ -28,8 +23,7 @@ class TestNode(TestCase):
 
     def test_attach(self):
         parent = Node()
-        child = Node()
-        parent.attach(child)
+        child = parent.attach(Node())
 
         # check for the parent being set
         self.assertIs(child._node_parent, parent)
@@ -191,3 +185,126 @@ class TestNode(TestCase):
         with patch("tgm.sys.query.Query.test") as mock:
             node.matches(Query())
             mock.assert_called_once_with(node)
+
+    def test_detach(self):
+        parent = Node()
+        child = parent.attach(Node())
+        parent._detach(child)
+
+        # check for the child being removed from the relevant direct child sets
+        for key in getmro(type(child)):
+            self.assertNotIn(child, parent._node_children[key])
+
+        # check for _remove_index_key being called for everything in the
+        # child's index
+        parent = Node()
+        child = parent.attach(Node())
+        with patch("tgm.sys.node.Node._remove_index_key") as mock:
+            parent._detach(child)
+            for key, node_set in child._node_index.items():
+                if node_set:
+                    mock.assert_any_call(key, child)
+
+    def test_add_index_key(self):
+        class Key:
+            pass
+
+        world = Node()
+        level = world.attach(Node())
+        player = level.attach(Node())
+        enemy = level.attach(Node())
+
+        # check single child with key
+        player._add_index_key(Key, player)
+        self.assertEqual(enemy._node_index[Key], set())
+        self.assertEqual(player._node_index[Key], {player})
+        self.assertEqual(level._node_index[Key], {player})
+        self.assertEqual(world._node_index[Key], {level})
+
+        # check two children with key
+        enemy._add_index_key(Key, enemy)
+        self.assertEqual(enemy._node_index[Key], {enemy})
+        self.assertEqual(player._node_index[Key], {player})
+        self.assertEqual(level._node_index[Key], {player, enemy})
+        self.assertEqual(world._node_index[Key], {level})
+
+    def test_remove_index_key(self):
+        class Key:
+            pass
+
+        world = Node()
+        level = world.attach(Node())
+
+        player = level.attach(Node())
+        enemy = level.attach(Node())
+
+        player._add_index_key(Key, player)
+        enemy._add_index_key(Key, enemy)
+        world._add_index_key(Key, world)
+
+        # check remove key with sibling having key
+        # index removal should stop at the immediate parent
+        player._remove_index_key(Key, player)
+        self.assertEqual(enemy._node_index[Key], {enemy})
+        self.assertEqual(player._node_index[Key], set())
+        self.assertEqual(level._node_index[Key], {enemy})
+        self.assertEqual(world._node_index[Key], {level, world})
+
+        # check removing key propagation
+        # world has the key directly, so it should remain
+        enemy._remove_index_key(Key, enemy)
+        self.assertEqual(enemy._node_index[Key], set())
+        self.assertEqual(player._node_index[Key], set())
+        self.assertEqual(level._node_index[Key], set())
+        self.assertEqual(world._node_index[Key], {world})
+
+        # ensure that removing the key from world works too
+        world._remove_index_key(Key, world)
+        self.assertEqual(world._node_index[Key], set())
+
+
+class TestOnInstantiationCalls(TestCase):
+    def test_add_instantiation_call(self):
+        key = object()
+
+        def call1(node):
+            pass
+
+        def call2(node):
+            pass
+
+        # check that the key does not exist yet
+        self.assertNotIn(key, _on_instantiation)
+
+        # check adding a single instantiation call
+        add_instantiation_call(key, call1)
+        self.assertEqual(_on_instantiation[key], [call1])
+
+        # check adding a second instantiation call
+        add_instantiation_call(key, call2)
+        self.assertEqual(_on_instantiation[key], [call1, call2])
+
+    def test_get_instantiation_calls(self):
+        key1, call1 = object(), lambda _: None
+        key2, call2 = object(), lambda _: None
+        key3, call3 = object(), lambda _: None
+        key4, call4 = object(), lambda _: None
+
+        add_instantiation_call(key1, call1)
+        add_instantiation_call(key2, call2)
+        add_instantiation_call(key3, call3)
+        add_instantiation_call(key4, call4)
+
+        class Base(Node):
+            a = key1
+            b = key2
+
+        class Player(Base):
+            c = key3
+            a = key4
+            z = "unrelated"
+
+        # should find the instantiation calls for the a,b and c attributes
+        # key4 should shadow key1, so key1 should not be called
+        self.assertEqual(set(_get_instantiation_calls(Player)),
+                         {call2, call3, call4})
