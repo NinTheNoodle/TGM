@@ -1,7 +1,6 @@
 from collections import defaultdict, Counter
 from inspect import getmro, getmembers
 from tgm.sys import Queryable, Query, make_query
-from itertools import chain
 
 
 class NodeMeta(Queryable, type):
@@ -139,11 +138,10 @@ class Node(metaclass=NodeMeta):
                 trim = make_query(trim).test
 
             if not isinstance(query, Query):
-                return chain.from_iterable(
-                    _find_fast_trim(child, query, trim)
-                    for child in self._node_index[query]
-                    if child is not self
-                )
+                return (candidate
+                        for child in self._node_index[query]
+                        if child is not self
+                        for candidate in _find_fast_trim(child, query, trim))
 
             query = query.trim(trim)
 
