@@ -1,6 +1,7 @@
 from collections import defaultdict, Counter
 from inspect import getmro, getmembers
 from tgm.sys import Queryable, Query, make_query
+from itertools import chain
 
 
 class NodeMeta(Queryable, type):
@@ -118,7 +119,7 @@ class Node(metaclass=NodeMeta):
         )
         return results[0]
 
-    def find(self, query, trim=lambda _: False):
+    def find(self, query, trim=None):
         """Return all children, their children, etc. which match the query.
 
         If a node matches the trim condition (function or query), the node
@@ -127,13 +128,24 @@ class Node(metaclass=NodeMeta):
         >>> world.find(Enemy)
         [<mygame.enemy.Enemy at 318f9f0>, <mygame.enemy.Enemy at 318e9f0>]
         """
-        if isinstance(trim, Queryable):
-            trim = make_query(trim).test
-
-        if isinstance(query, Query):
-            query = query.trim(trim)
+        if trim is None:
+            if not isinstance(query, Query):
+                return (candidate
+                        for child in self._node_index[query]
+                        if child is not self
+                        for candidate in _find_fast(child, query))
         else:
-            query = Query(query, trim=trim)
+            if isinstance(trim, Queryable):
+                trim = make_query(trim).test
+
+            if not isinstance(query, Query):
+                return chain.from_iterable(
+                    _find_fast_trim(child, query, trim)
+                    for child in self._node_index[query]
+                    if child is not self
+                )
+
+            query = query.trim(trim)
 
         return query.find_in(self)
 
@@ -163,7 +175,7 @@ class Node(metaclass=NodeMeta):
         )
         return results[0]
 
-    def find_with(self, query, trim=lambda _: False):
+    def find_with(self, query, trim=None):
         """Find descendents which have a child matching the query.
 
         If a node matches the trim condition (function or query), the node
@@ -172,11 +184,20 @@ class Node(metaclass=NodeMeta):
         >>> world.find_with(Collider)
         [<mygame.enemy.Enemy at 318f9f0>, <mygame.player.Player at 318e9f0>]
         """
-        if isinstance(trim, Queryable):
-            trim = make_query(trim).test
+        if trim is None:
+            if not isinstance(query, Query):
+                return _find_with_fast(self, query)
+            full_query = Query(Node, child_query=query)
+        else:
+            if isinstance(trim, Queryable):
+                trim = make_query(trim).test
 
-        query = make_query(query)
-        return Query(Node, trim=trim, child_query=query).find_in(self)
+            if not isinstance(query, Query):
+                return _find_with_fast_trim(self, query, trim)
+
+            full_query = Query(Node, trim=trim, child_query=query)
+
+        return full_query.find_in(self)
 
     def matches(self, query):
         """Return if the node matches the given query.
@@ -243,6 +264,65 @@ def node_tree_summary(node, indent="    ", prefix=""):
 
         tree_string += "\n" + subtree_string
     return tree_string
+
+
+def _find_fast(node, key):
+    """Optimised version of Node's find for a simple key and no trim.
+
+    Unlike Node's find, this function can return the node passed in if
+    it matches. As such to get the same behaviour is should be called
+    on each child."""
+    for child in node._node_index[key]:
+        if child is node:
+            yield child
+            continue
+
+        for nested_child in _find_fast(child, key):
+            yield nested_child
+
+
+def _find_fast_trim(node, key, trim):
+    """Optimised version of Node's find for a simple key and a trim function.
+
+    Unlike Node's find, this function can return the node passed in if
+    it matches. As such to get the same behaviour is should be called
+    on each child."""
+    for child in node._node_index[key]:
+        if trim(child):
+            continue
+
+        if child is node:
+            yield child
+            continue
+
+        for nested_child in _find_fast_trim(child, key, trim):
+            yield nested_child
+
+
+def _find_with_fast(node, key):
+    """Optimised version of Node's find_with for a simple key and no trim."""
+    for child in node._node_index[key]:
+        if child is node:
+            continue
+
+        if child._node_children[key]:
+            yield child
+
+        for nested_child in _find_with_fast(child, key):
+            yield nested_child
+
+
+def _find_with_fast_trim(node, key, trim):
+    """Optimised version of Node's find_with for a simple key and a trim."""
+    for child in node._node_index[key]:
+        if child is node or trim(child):
+            continue
+
+        if child._node_children[key]:
+            yield child
+
+        for nested_child in _find_with_fast_trim(child, key, trim):
+            yield nested_child
 
 
 # Functions that get called when a given object is found in a node's namespace

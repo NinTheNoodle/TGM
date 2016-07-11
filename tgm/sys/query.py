@@ -58,6 +58,7 @@ class Query(Queryable):
 
     def test(self, node):
         """Checks if the given node matches the query."""
+        # TODO: Possibly replace with node in node._node_index[self._key]
         if not isinstance(node, self._key):
             return False
 

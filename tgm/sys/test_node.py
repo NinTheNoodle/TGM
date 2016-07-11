@@ -1,8 +1,11 @@
 from unittest import TestCase
-from tgm.sys.node import _get_instantiation_calls, _on_instantiation
+from tgm.sys.node import (
+    _get_instantiation_calls, _on_instantiation, _find_fast, _find_with_fast,
+    _find_fast_trim, _find_with_fast_trim
+)
 from tgm.sys import Node, Query, add_instantiation_call
 from inspect import getmro
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, ANY
 
 
 class TestNode(TestCase):
@@ -107,7 +110,7 @@ class TestNode(TestCase):
 
         # check full query call
         with patch("tgm.sys.query.Query.find_on") as mock:
-            node.children(Query())
+            list(node.children(Query()))
             mock.assert_called_once_with(node)
 
     def test_get(self):
@@ -118,35 +121,30 @@ class TestNode(TestCase):
 
     def test_find(self):
         node = Node()
-        with patch("tgm.sys.query.Query.find_in") as mock:
-            # check call with query
-            node.find(Query())
-            mock.assert_called_once_with(node)
+        child = node.attach(Node())
 
-            # check call with key
-            mock.reset_mock()
-            node.find(Node)
-            mock.assert_called_once_with(node)
-
-        # check trimming full query
-        def trim(_):
+        def trim(current_node):
             return False
 
+        with patch("tgm.sys.query.Query.find_in") as mock:
+            # check call with query
+            list(node.find(Query()))
+            mock.assert_called_once_with(node)
+
+        with patch("tgm.sys.node._find_fast") as mock:
+            # check call with key
+            list(node.find(Node))
+            mock.assert_called_once_with(child, Node)
+
+        # check trimming full query
         with patch("tgm.sys.query.Query.trim") as mock:
-            node.find(Query(), trim=trim)
+            node.find(Query(), trim)
             mock.assert_called_once_with(trim)
 
         # check trimming key only
-        query_mock = Mock()
-
-        # for allowing isinstance(..., Query) to work
-        class QueryMock(Query):
-            def __new__(cls, *args, **kwargs):
-                return query_mock(*args, **kwargs)
-
-        with patch("tgm.sys.node.Query", QueryMock):
-            node.find(Node, trim=trim)
-            query_mock.assert_called_once_with(Node, trim=trim)
+        with patch("tgm.sys.node._find_fast_trim") as mock:
+            list(node.find(Node, trim))
+            mock.assert_called_once_with(child, Node, trim)
 
     def test_children_with(self):
         node = Node()
@@ -158,7 +156,7 @@ class TestNode(TestCase):
 
         # check full query call
         with patch("tgm.sys.query.Query.find_on") as mock:
-            node.children(Query())
+            list(node.children(Query()))
             mock.assert_called_once_with(node)
 
     def test_get_with(self):
@@ -170,15 +168,25 @@ class TestNode(TestCase):
 
     def test_find_with(self):
         node = Node()
+        node.attach(Node())
+
+        def trim(current_node):
+            return False
+
+        # check call with query
         with patch("tgm.sys.query.Query.find_in") as mock:
-            # check call with query
-            node.find_with(Query())
+            list(node.find_with(Query()))
             mock.assert_called_once_with(node)
 
-            # check call with key
-            mock.reset_mock()
-            node.find_with(Node)
-            mock.assert_called_once_with(node)
+        # check call with key
+        with patch("tgm.sys.node._find_with_fast") as mock:
+            list(node.find_with(Node))
+            mock.assert_called_once_with(node, Node)
+
+        # check call with key
+        with patch("tgm.sys.node._find_with_fast_trim") as mock:
+            list(node.find_with(Node, trim))
+            mock.assert_called_once_with(node, Node, trim)
 
     def test_matches(self):
         node = Node()
@@ -261,6 +269,111 @@ class TestNode(TestCase):
         # ensure that removing the key from world works too
         world._remove_index_key(Key, world)
         self.assertEqual(world._node_index[Key], set())
+
+
+class TestFindFast(TestCase):
+    class Enemy(Node):
+        pass
+
+    class Player(Node):
+        pass
+
+    class Collider(Node):
+        pass
+
+    def setUp(self):
+        # every enemy has a collider (and only enemies)
+        # world has an enemy directly as well as two layers
+        # layer 1 has an enemy and a player
+        # layer 2 has two enemies
+        self.world = Node()
+        self.enemy_world = self.world.attach(self.Enemy())
+        self.enemy_world.attach(self.Collider())
+
+        self.layer1 = self.world.attach(Node())
+        self.layer1.attach(self.Player())
+        self.enemy_layer1 = self.layer1.attach(self.Enemy())
+        self.enemy_layer1.attach(self.Collider())
+
+        self.layer2 = self.world.attach(Node())
+        self.enemy1_layer2 = self.layer2.attach(self.Enemy())
+        self.enemy1_layer2.attach(self.Collider())
+        self.enemy2_layer2 = self.layer2.attach(self.Enemy())
+        self.enemy2_layer2.attach(self.Collider())
+
+        self.enemies = {
+            self.enemy_world,
+            self.enemy_layer1,
+            self.enemy1_layer2,
+            self.enemy2_layer2
+        }
+
+    def test_find_fast(self):
+        # find disperse objects
+        self.assertEqual(set(_find_fast(self.world, self.Enemy)), self.enemies)
+
+        # find root object
+        self.assertIn(self.world, set(_find_fast(self.world, Node)))
+
+    def test_find_fast_trim(self):
+        def no_trim(node):
+            return False
+
+        def layer2_trim(node):
+            return node is self.layer2
+
+        # find disperse objects
+        self.assertEqual(
+            set(_find_fast_trim(self.world, self.Enemy, no_trim)),
+            self.enemies
+        )
+
+        # find root object
+        self.assertIn(
+            self.world,
+            set(_find_fast_trim(self.world, Node, no_trim))
+        )
+
+        # find disperse objects with trim
+        self.assertEqual(
+            set(_find_fast_trim(self.world, self.Enemy, layer2_trim)),
+            self.enemies - {self.enemy1_layer2, self.enemy2_layer2}
+        )
+
+    def test_find_with_fast(self):
+        # find disperse objects
+        self.assertEqual(
+            set(_find_with_fast(self.world, self.Collider)),
+            self.enemies
+        )
+
+        # do not find root object
+        self.assertNotIn(self.world, set(_find_with_fast(self.world, Node)))
+
+    def test_find_with_fast_trim(self):
+        def no_trim(node):
+            return False
+
+        def layer2_trim(node):
+            return node is self.layer2
+
+        # find disperse objects
+        self.assertEqual(
+            set(_find_with_fast_trim(self.world, self.Collider, no_trim)),
+            self.enemies
+        )
+
+        # do not find root object
+        self.assertNotIn(
+            self.world,
+            set(_find_with_fast_trim(self.world, Node, no_trim))
+        )
+
+        # find disperse objects with trim
+        self.assertEqual(
+            set(_find_with_fast_trim(self.world, self.Collider, layer2_trim)),
+            self.enemies - {self.enemy1_layer2, self.enemy2_layer2}
+        )
 
 
 class TestOnInstantiationCalls(TestCase):
