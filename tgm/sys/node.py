@@ -22,7 +22,7 @@ class Node(metaclass=NodeMeta):
         obj._node_index = defaultdict(set)
 
         # Register each base class in the index of the created object
-        for key in getmro(type(obj)):
+        for key in getmro(cls):
             obj._add_index_key(key, obj)
 
         for call in _get_instantiation_calls(cls):
@@ -41,8 +41,8 @@ class Node(metaclass=NodeMeta):
         for key in getmro(type(node)):
             self._node_children[key].add(node)
 
-        if node.parent() is not None:
-            node.parent()._detach(node)
+        if node._node_parent is not None:
+            node._node_parent._detach(node)
 
         node._node_parent = self
         for key, node_set in node._node_index.items():
@@ -62,8 +62,8 @@ class Node(metaclass=NodeMeta):
         for child in self.children(Node):
             child.destroy()
 
-        if self.parent() is not None:
-            self.parent()._detach(self)
+        if self._node_parent is not None:
+            self._node_parent._detach(self)
 
     def parent(self, query=None):
         """Return the first parent that satisfies the query, starting with the
@@ -221,8 +221,8 @@ class Node(metaclass=NodeMeta):
 
     def _add_index_key(self, key, node):
         """Register this object as having a given key."""
-        if (self.parent() is not None) and (not self._node_index[key]):
-            self.parent()._add_index_key(key, self)
+        if (self._node_parent is not None) and (not self._node_index[key]):
+            self._node_parent._add_index_key(key, self)
 
         self._node_index[key].add(node)
 
@@ -230,8 +230,8 @@ class Node(metaclass=NodeMeta):
         """Unregister this object as having a given key."""
         self._node_index[key].remove(node)
 
-        if (self.parent() is not None) and (not self._node_index[key]):
-            self.parent()._remove_index_key(key, self)
+        if (self._node_parent is not None) and (not self._node_index[key]):
+            self._node_parent._remove_index_key(key, self)
 
     def __repr__(self):
         return "<{module}.{type} at {id:x}>".format(
@@ -326,17 +326,23 @@ def _find_with_fast_trim(node, key, trim):
 # Functions that get called when a given object is found in a node's namespace
 # {object: [functions_to_call]}
 _on_instantiation = {}
+_on_instantiation_cache = {}
 
 
 def _get_instantiation_calls(cls):
     """Find every on_instantiation call associated with an attribute on the
     given class."""
-    calls = []
-    for _, attr_value in getmembers(cls):
-        try:
-            calls.extend(_on_instantiation[attr_value])
-        except (KeyError, TypeError):
-            pass
+    try:
+        calls = _on_instantiation_cache[cls]
+    except KeyError:
+        calls = []
+        for _, attr_value in getmembers(cls):
+            try:
+                calls.extend(_on_instantiation[attr_value])
+            except (KeyError, TypeError):
+                pass
+        _on_instantiation_cache[cls] = calls
+
     return calls
 
 
