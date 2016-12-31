@@ -23,6 +23,20 @@ class Queryable:
         return rhs.parent_matches(lhs)
 
 
+class QueryablePrimitive(Queryable):
+    """Base class for objects that can be used as query indexes.
+
+    Any object that is an instance of this is possible to use as part of a query
+    and will be indexed for the sake of searching the node tree using queries.
+
+    my_object = QueryablePrimitive()
+    world.find(my_object[Collider])
+
+    Node classes are instances of this, meaning they can be used in queries.
+    """
+    pass
+
+
 class DummyQuery(Queryable):
     """Represents a query which does no filtering.  For internal use. """
     def _optimal_key(self, node):
@@ -255,7 +269,7 @@ def _make_child_query(item):
         pass
 
     # special fallback check for where item has a metaclass
-    if isinstance(item, type):
+    if isinstance(item, QueryablePrimitive):
         _child_query_cases[type(item)] = lambda item: Query(
             child_query=Query(item)
         )

@@ -1,9 +1,9 @@
 from collections import defaultdict, Counter
 from inspect import getmro, getmembers
-from tgm.sys import Queryable, Query, make_query
+from tgm.sys import Queryable, QueryablePrimitive, Query, make_query
 
 
-class NodeMeta(Queryable, type):
+class NodeMeta(QueryablePrimitive, type):
     """The metaclass which makes Node subclasses into Queryable instances."""
     pass
 
@@ -128,7 +128,7 @@ class Node(metaclass=NodeMeta):
         [<mygame.enemy.Enemy at 318f9f0>, <mygame.enemy.Enemy at 318e9f0>]
         """
         if trim is None:
-            if isinstance(query, type):
+            if isinstance(query, QueryablePrimitive):
                 return (candidate
                         for child in self._node_index[query]
                         if child is not self
@@ -137,7 +137,7 @@ class Node(metaclass=NodeMeta):
             if isinstance(trim, Queryable):
                 trim = make_query(trim).test
 
-            if isinstance(query, type):
+            if isinstance(query, QueryablePrimitive):
                 return (candidate
                         for child in self._node_index[query]
                         if child is not self
