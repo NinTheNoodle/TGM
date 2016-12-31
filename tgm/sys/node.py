@@ -128,7 +128,7 @@ class Node(metaclass=NodeMeta):
         [<mygame.enemy.Enemy at 318f9f0>, <mygame.enemy.Enemy at 318e9f0>]
         """
         if trim is None:
-            if not isinstance(query, Query):
+            if isinstance(query, type):
                 return (candidate
                         for child in self._node_index[query]
                         if child is not self
@@ -137,7 +137,7 @@ class Node(metaclass=NodeMeta):
             if isinstance(trim, Queryable):
                 trim = make_query(trim).test
 
-            if not isinstance(query, Query):
+            if isinstance(query, type):
                 return (candidate
                         for child in self._node_index[query]
                         if child is not self
